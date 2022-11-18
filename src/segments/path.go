@@ -2,7 +2,7 @@ package segments
 
 import (
 	"fmt"
-	"oh-my-posh/environment"
+	"oh-my-posh/platform"
 	"oh-my-posh/properties"
 	"oh-my-posh/regex"
 	"oh-my-posh/shell"
@@ -13,7 +13,7 @@ import (
 
 type Path struct {
 	props properties.Properties
-	env   environment.Environment
+	env   platform.Environment
 
 	root     string
 	relative string
@@ -78,13 +78,14 @@ func (pt *Path) Enabled() bool {
 		return false
 	}
 	pt.setStyle()
+	pwd := pt.env.Pwd()
 	if pt.env.IsWsl() {
-		pt.Location, _ = pt.env.RunCommand("wslpath", "-m", pt.pwd)
+		pt.Location, _ = pt.env.RunCommand("wslpath", "-m", pwd)
 	} else {
-		pt.Location = pt.pwd
+		pt.Location = pwd
 	}
 	pt.StackCount = pt.env.StackCount()
-	pt.Writable = pt.env.DirIsWritable(pt.env.Pwd())
+	pt.Writable = pt.env.DirIsWritable(pwd)
 	return true
 }
 
@@ -114,12 +115,12 @@ func (pt *Path) Parent() string {
 		// a root path has no parent
 		return ""
 	}
-	base := environment.Base(pt.env, pt.pwd)
+	base := platform.Base(pt.env, pt.pwd)
 	path := pt.replaceFolderSeparators(pt.pwd[:len(pt.pwd)-len(base)])
 	return path
 }
 
-func (pt *Path) Init(props properties.Properties, env environment.Environment) {
+func (pt *Path) Init(props properties.Properties, env platform.Environment) {
 	pt.props = props
 	pt.env = env
 }
@@ -127,6 +128,9 @@ func (pt *Path) Init(props properties.Properties, env environment.Environment) {
 func (pt *Path) setStyle() {
 	if len(pt.relative) == 0 {
 		pt.Path = pt.root
+		if strings.HasSuffix(pt.Path, ":") {
+			pt.Path += pt.env.PathSeparator()
+		}
 		return
 	}
 	switch style := pt.props.GetString(properties.Style, Agnoster); style {
@@ -173,7 +177,7 @@ func (pt *Path) getFolderSeparator() string {
 	}
 	text, err := tmpl.Render()
 	if err != nil {
-		pt.env.Log(environment.Error, "getFolderSeparator", err.Error())
+		pt.env.Log(platform.Error, "getFolderSeparator", err.Error())
 	}
 	if len(text) == 0 {
 		return pt.env.PathSeparator()
@@ -373,7 +377,7 @@ func (pt *Path) getFullPath() string {
 }
 
 func (pt *Path) getFolderPath() string {
-	pwd := environment.Base(pt.env, pt.pwd)
+	pwd := platform.Base(pt.env, pt.pwd)
 	return pt.replaceFolderSeparators(pwd)
 }
 
@@ -390,9 +394,22 @@ func (pt *Path) replaceMappedLocations() (string, string) {
 	// mapped locations can override predefined locations
 	keyValues := pt.props.GetKeyValueMap(MappedLocations, make(map[string]string))
 	for key, val := range keyValues {
-		if key != "" {
-			mappedLocations[pt.normalize(key)] = val
+		if len(key) == 0 {
+			continue
 		}
+		tmpl := &template.Text{
+			Template: key,
+			Context:  pt,
+			Env:      pt.env,
+		}
+		path, err := tmpl.Render()
+		if err != nil {
+			pt.env.Log(platform.Error, "replaceMappedLocations", err.Error())
+		}
+		if len(path) == 0 {
+			continue
+		}
+		mappedLocations[pt.normalize(path)] = val
 	}
 
 	// sort map keys in reverse order
@@ -411,6 +428,10 @@ func (pt *Path) replaceMappedLocations() (string, string) {
 
 	for _, key := range keys {
 		keyRoot, keyRelative := pt.parsePath(key)
+		matchSubFolders := strings.HasSuffix(keyRelative, "*")
+		if matchSubFolders && len(keyRelative) > 1 {
+			keyRelative = keyRelative[0 : len(keyRelative)-1] // remove trailing /* or \*
+		}
 		if keyRoot != rootN || !strings.HasPrefix(relativeN, keyRelative) {
 			continue
 		}
@@ -425,7 +446,7 @@ func (pt *Path) replaceMappedLocations() (string, string) {
 			return value, strings.Trim(relative, pathSeparator)
 		}
 		// match several prefix elements
-		if overflow[0:1] == pt.env.PathSeparator() {
+		if matchSubFolders || overflow[0:1] == pt.env.PathSeparator() {
 			return value, strings.Trim(overflow, pathSeparator)
 		}
 	}
@@ -433,7 +454,7 @@ func (pt *Path) replaceMappedLocations() (string, string) {
 }
 
 func (pt *Path) normalizePath(path string) string {
-	if pt.env.GOOS() != environment.WINDOWS {
+	if pt.env.GOOS() != platform.WINDOWS {
 		return path
 	}
 	var clean []rune
@@ -470,7 +491,7 @@ func (pt *Path) parsePath(inputPath string) (root, path string) {
 		return s.String()
 	}
 
-	if pt.env.GOOS() == environment.WINDOWS {
+	if pt.env.GOOS() == platform.WINDOWS {
 		inputPath = pt.normalizePath(inputPath)
 		// for a UNC path, extract \\hostname\sharename as the root
 		matches := regex.FindNamedRegexMatch(`^\\\\(?P<hostname>[^\\]+)\\+(?P<sharename>[^\\]+)\\*(?P<path>[\s\S]*)$`, inputPath)
@@ -482,7 +503,7 @@ func (pt *Path) parsePath(inputPath string) (root, path string) {
 	}
 	s := strings.SplitAfterN(inputPath, separator, 2)
 	root = s[0]
-	if pt.env.GOOS() == environment.WINDOWS {
+	if pt.env.GOOS() == platform.WINDOWS {
 		root = strings.TrimSuffix(root, separator)
 	}
 	if len(s) == 2 {
@@ -493,14 +514,14 @@ func (pt *Path) parsePath(inputPath string) (root, path string) {
 
 func (pt *Path) normalize(inputPath string) string {
 	normalized := inputPath
-	if strings.HasPrefix(normalized, "~") && (len(normalized) == 1 || environment.IsPathSeparator(pt.env, normalized[1])) {
+	if strings.HasPrefix(normalized, "~") && (len(normalized) == 1 || platform.IsPathSeparator(pt.env, normalized[1])) {
 		normalized = pt.env.Home() + normalized[1:]
 	}
 	switch pt.env.GOOS() {
-	case environment.WINDOWS:
+	case platform.WINDOWS:
 		normalized = pt.normalizePath(normalized)
 		fallthrough
-	case environment.DARWIN:
+	case platform.DARWIN:
 		normalized = strings.ToLower(normalized)
 	}
 	return normalized

@@ -3,7 +3,7 @@ package segments
 import (
 	"errors"
 	"fmt"
-	"oh-my-posh/environment"
+	"oh-my-posh/platform"
 	"oh-my-posh/properties"
 	"oh-my-posh/regex"
 	"oh-my-posh/template"
@@ -11,6 +11,7 @@ import (
 
 const (
 	languageTemplate = " {{ if .Error }}{{ .Error }}{{ else }}{{ .Full }}{{ end }} "
+	noVersion        = "NO VERSION"
 )
 
 type loadContext func()
@@ -58,7 +59,7 @@ func (c *cmd) parse(versionInfo string) (*version, error) {
 
 type language struct {
 	props              properties.Properties
-	env                environment.Environment
+	env                platform.Environment
 	extensions         []string
 	folders            []string
 	commands           []*cmd
@@ -162,10 +163,11 @@ func (l *language) setVersion() error {
 		var err error
 		if command.getVersion == nil {
 			if !l.env.HasCommand(command.executable) {
+				lastError = errors.New(noVersion)
 				continue
 			}
 			versionStr, err = l.env.RunCommand(command.executable, command.args...)
-			if exitErr, ok := err.(*environment.CommandError); ok {
+			if exitErr, ok := err.(*platform.CommandError); ok {
 				l.exitCode = exitErr.ExitCode
 				lastError = fmt.Errorf("err executing %s with %s", command.executable, command.args)
 				continue

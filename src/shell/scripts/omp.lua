@@ -23,10 +23,7 @@ end
 local endedit_time = 0
 local last_duration = 0
 local tooltips_enabled = ::TOOLTIPS::
-local rprompt_enabled = true
--- REVIEW:  OMP could set rprompt_enabled = ::HASRPROMPT:: which could speed up
--- performance for configs that don't have an rprompt, by not needing to invoke
--- OMP an extra time for the rprompt.
+local rprompt_enabled = ::RPROMPT::
 
 local cached_prompt = {}
 -- Fields in cached_prompt:

@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 	"oh-my-posh/engine"
-	"oh-my-posh/environment"
+	"oh-my-posh/platform"
 	"oh-my-posh/shell"
 
 	"github.com/spf13/cobra"
@@ -45,13 +45,13 @@ func init() { //nolint:gochecknoinits
 	initCmd.Flags().BoolVarP(&strict, "strict", "s", false, "run in strict mode")
 	initCmd.Flags().BoolVarP(&manual, "manual", "m", false, "enable/disable manual mode")
 	_ = initCmd.MarkPersistentFlagRequired("config")
-	rootCmd.AddCommand(initCmd)
+	RootCmd.AddCommand(initCmd)
 }
 
 func runInit(shellName string) {
-	env := &environment.ShellEnvironment{
+	env := &platform.Shell{
 		Version: cliVersion,
-		CmdFlags: &environment.Flags{
+		CmdFlags: &platform.Flags{
 			Shell:  shellName,
 			Config: config,
 			Strict: strict,
@@ -64,6 +64,11 @@ func runInit(shellName string) {
 	shell.Transient = cfg.TransientPrompt != nil
 	shell.ErrorLine = cfg.ErrorLine != nil || cfg.ValidLine != nil
 	shell.Tooltips = len(cfg.Tooltips) > 0
+	for _, block := range cfg.Blocks {
+		if block.Type == engine.RPrompt {
+			shell.RPrompt = true
+		}
+	}
 	if print {
 		init := shell.PrintInit(env)
 		fmt.Print(init)

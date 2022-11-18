@@ -107,6 +107,18 @@ function _posh-zle-line-init() {
 
 if [[ "::TRANSIENT::" = "true" ]]; then
   zle -N zle-line-init _posh-zle-line-init
+
+  # restore broken key bindings
+  # https://github.com/JanDeDobbeleer/oh-my-posh/discussions/2617#discussioncomment-3911044
+  bindkey '^[[F' end-of-line
+  bindkey '^[[H' beginning-of-line
+  _widgets=$(zle -la)
+  if [[ -n "${_widgets[(r)down-line-or-beginning-search]}" ]]; then
+    bindkey '^[[B' down-line-or-beginning-search
+  fi
+  if [[ -n "${_widgets[(r)up-line-or-beginning-search]}" ]]; then
+    bindkey '^[[A' up-line-or-beginning-search
+  fi
 fi
 
 # legacy functions for backwards compatibility

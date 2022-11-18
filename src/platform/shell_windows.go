@@ -1,4 +1,4 @@
-package environment
+package platform
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-func (env *ShellEnvironment) Root() bool {
+func (env *Shell) Root() bool {
 	defer env.Trace(time.Now(), "Root")
 	var sid *windows.SID
 
@@ -51,7 +51,7 @@ func (env *ShellEnvironment) Root() bool {
 	return member
 }
 
-func (env *ShellEnvironment) Home() string {
+func (env *Shell) Home() string {
 	home := os.Getenv("HOME")
 	defer func() {
 		env.Log(Debug, "Home", home)
@@ -67,7 +67,7 @@ func (env *ShellEnvironment) Home() string {
 	return home
 }
 
-func (env *ShellEnvironment) QueryWindowTitles(processName, windowTitleRegex string) (string, error) {
+func (env *Shell) QueryWindowTitles(processName, windowTitleRegex string) (string, error) {
 	defer env.Trace(time.Now(), "WindowTitle", windowTitleRegex)
 	title, err := queryWindowTitles(processName, windowTitleRegex)
 	if err != nil {
@@ -76,17 +76,17 @@ func (env *ShellEnvironment) QueryWindowTitles(processName, windowTitleRegex str
 	return title, err
 }
 
-func (env *ShellEnvironment) IsWsl() bool {
+func (env *Shell) IsWsl() bool {
 	defer env.Trace(time.Now(), "IsWsl")
 	return false
 }
 
-func (env *ShellEnvironment) IsWsl2() bool {
+func (env *Shell) IsWsl2() bool {
 	defer env.Trace(time.Now(), "IsWsl2")
 	return false
 }
 
-func (env *ShellEnvironment) TerminalWidth() (int, error) {
+func (env *Shell) TerminalWidth() (int, error) {
 	defer env.Trace(time.Now(), "TerminalWidth")
 	if env.CmdFlags.TerminalWidth != 0 {
 		return env.CmdFlags.TerminalWidth, nil
@@ -105,11 +105,11 @@ func (env *ShellEnvironment) TerminalWidth() (int, error) {
 	return int(info.Size.X), nil
 }
 
-func (env *ShellEnvironment) Platform() string {
+func (env *Shell) Platform() string {
 	return WINDOWS
 }
 
-func (env *ShellEnvironment) CachePath() string {
+func (env *Shell) CachePath() string {
 	defer env.Trace(time.Now(), "CachePath")
 	// get LOCALAPPDATA if present
 	if cachePath := returnOrBuildCachePath(env.Getenv("LOCALAPPDATA")); len(cachePath) != 0 {
@@ -118,7 +118,7 @@ func (env *ShellEnvironment) CachePath() string {
 	return env.Home()
 }
 
-func (env *ShellEnvironment) LookWinAppPath(file string) (string, error) {
+func (env *Shell) LookWinAppPath(file string) (string, error) {
 	winAppPath := filepath.Join(env.Getenv("LOCALAPPDATA"), `\Microsoft\WindowsApps\`)
 	command := file + ".exe"
 	isWinStoreApp := func() bool {
@@ -140,10 +140,10 @@ func (env *ShellEnvironment) LookWinAppPath(file string) (string, error) {
 // If the path ends in "\", the "(Default)" key in that path is retrieved.
 //
 // Returns a variant type if successful; nil and an error if not.
-func (env *ShellEnvironment) WindowsRegistryKeyValue(path string) (*WindowsRegistryValue, error) {
+func (env *Shell) WindowsRegistryKeyValue(path string) (*WindowsRegistryValue, error) {
 	env.Trace(time.Now(), "WindowsRegistryKeyValue", path)
 
-	// Format:
+	// Format:sudo -u postgres psql
 	// "HKLM\Software\Microsoft\Windows NT\CurrentVersion\EditionID"
 	//   1  |                  2                         |   3
 	//
@@ -221,41 +221,24 @@ func (env *ShellEnvironment) WindowsRegistryKeyValue(path string) (*WindowsRegis
 	return regValue, nil
 }
 
-func (env *ShellEnvironment) InWSLSharedDrive() bool {
+func (env *Shell) InWSLSharedDrive() bool {
 	return false
 }
 
-func (env *ShellEnvironment) ConvertToWindowsPath(path string) string {
+func (env *Shell) ConvertToWindowsPath(path string) string {
 	return strings.ReplaceAll(path, `\`, "/")
 }
 
-func (env *ShellEnvironment) ConvertToLinuxPath(path string) string {
+func (env *Shell) ConvertToLinuxPath(path string) string {
 	return path
 }
 
-func (env *ShellEnvironment) DirIsWritable(path string) bool {
+func (env *Shell) DirIsWritable(path string) bool {
 	defer env.Trace(time.Now(), "DirIsWritable")
-	info, err := os.Stat(path)
-	if err != nil {
-		env.Log(Error, "DirIsWritable", err.Error())
-		return false
-	}
-
-	if !info.IsDir() {
-		env.Log(Error, "DirIsWritable", "Path isn't a directory")
-		return false
-	}
-
-	// Check if the user bit is enabled in file permission
-	if info.Mode().Perm()&(1<<(uint(7))) == 0 {
-		env.Log(Error, "DirIsWritable", "Write permission bit is not set on this file for user")
-		return false
-	}
-
-	return true
+	return isWriteable(path)
 }
 
-func (env *ShellEnvironment) Connection(connectionType ConnectionType) (*Connection, error) {
+func (env *Shell) Connection(connectionType ConnectionType) (*Connection, error) {
 	if env.networks == nil {
 		networks := env.getConnections()
 		if len(networks) == 0 {

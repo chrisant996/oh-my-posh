@@ -31,6 +31,7 @@ starting point to create your own configuration.
 {
   "$schema": "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json",
   "final_space": true,
+  "version": 2,
   "blocks": [
     {
       "type": "prompt",
@@ -58,6 +59,7 @@ starting point to create your own configuration.
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json
 final_space: true
+version: 2
 blocks:
   - type: prompt
     alignment: left
@@ -77,6 +79,7 @@ blocks:
 ```toml
 "$schema" = "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json"
 final_space = true
+version = 2
 
 [[blocks]]
 type = "prompt"
@@ -158,7 +161,7 @@ warnings, and ignore them at your peril.
 
 Oh My Posh supports three file formats for themes: `json`, `yaml`, and `toml`.
 
-Various converters exist to convert between these, although they aren't perfect and will require manaual
+Various converters exist to convert between these, although they aren't perfect and will require manual
 adjustment. Notably, the schema implementation for json is as follows:
 
 ```json

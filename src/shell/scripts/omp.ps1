@@ -22,7 +22,7 @@ New-Module -Name "oh-my-posh-core" -ScriptBlock {
     $script:TransientPrompt = $false
     $env:POWERLINE_COMMAND = "oh-my-posh"
     $env:CONDA_PROMPT_MODIFIER = $false
-    if ((::CONFIG:: -ne '') -and (Test-Path ::CONFIG::)) {
+    if ((::CONFIG:: -ne '') -and (Test-Path -LiteralPath ::CONFIG::)) {
         $env:POSH_THEME = (Resolve-Path -Path ::CONFIG::).ProviderPath
     }
 
@@ -85,7 +85,7 @@ New-Module -Name "oh-my-posh-core" -ScriptBlock {
         if ($PWD.Provider.Name -eq 'FileSystem') {
             # make sure we're in a valid directory
             # if not, go back HOME
-            if (-not (Test-Path -Path $PWD)) {
+            if (-not (Test-Path -LiteralPath $PWD)) {
                 Write-Host "Unable to find the current directory, falling back to $HOME" -ForegroundColor Red
                 Set-Location $HOME
             }
@@ -246,7 +246,7 @@ New-Module -Name "oh-my-posh-core" -ScriptBlock {
             do {
                 $temp = Read-Host 'Please enter the themes path'
             }
-            while (-not (Test-Path -Path $temp))
+            while (-not (Test-Path -LiteralPath $temp))
             $Path = (Resolve-Path -Path $temp).ProviderPath
         }
 
@@ -292,7 +292,7 @@ Example:
         # for details about the trick to detect a debugging context, see these comments:
         # 1) https://github.com/JanDeDobbeleer/oh-my-posh/issues/2483#issuecomment-1175761456
         # 2) https://github.com/JanDeDobbeleer/oh-my-posh/issues/2502#issuecomment-1179968052
-        if (-not ((Get-PSCallStack).Location -join "").StartsWith("<")) {
+        if ($null -ne $PSDebugContext -or -not ((Get-PSCallStack).Location -join "").StartsWith("<")) {
             $script:PromptType = "debug"
             return
         }

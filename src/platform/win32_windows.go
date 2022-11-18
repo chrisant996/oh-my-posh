@@ -1,10 +1,9 @@
-//go:build windows
-
-package environment
+package platform
 
 import (
 	"errors"
 	"oh-my-posh/regex"
+	"reflect"
 	"strings"
 	"syscall"
 	"unicode/utf16"
@@ -197,200 +196,75 @@ func readWinAppLink(path string) (string, error) {
 	return appExecLink.Path()
 }
 
-// networks
-
-func (env *ShellEnvironment) getConnections() []*Connection {
-	var pIFTable2 *MIN_IF_TABLE2
-	_, _, _ = hGetIfTable2.Call(uintptr(unsafe.Pointer(&pIFTable2)))
-
-	networks := make([]*Connection, 0)
-
-	for i := 0; i < int(pIFTable2.NumEntries); i++ {
-		networkInterface := pIFTable2.Table[i]
-		alias := strings.TrimRight(syscall.UTF16ToString(networkInterface.Alias[:]), "\x00")
-		description := strings.TrimRight(syscall.UTF16ToString(networkInterface.Description[:]), "\x00")
-
-		if networkInterface.OperStatus != 1 || // not connected or functional
-			!networkInterface.InterfaceAndOperStatusFlags.HardwareInterface || // rule out software interfaces
-			strings.HasPrefix(alias, "Local Area Connection") || // not relevant
-			strings.Index(alias, "-") >= 3 { // rule out parts of Ethernet filter interfaces
-			// e.g. : "Ethernet-WFP Native MAC Layer LightWeight Filter-0000"
-			continue
-		}
-
-		var connectionType ConnectionType
-		var ssid string
-		switch networkInterface.Type {
-		case 6:
-			connectionType = ETHERNET
-		case 71:
-			connectionType = WIFI
-			ssid = env.getWiFiSSID(networkInterface.InterfaceGUID)
-		case 237, 234, 244:
-			connectionType = CELLULAR
-		}
-
-		if networkInterface.PhysicalMediumType == 10 {
-			connectionType = BLUETOOTH
-		}
-
-		// skip connections which aren't relevant
-		if len(connectionType) == 0 {
-			continue
-		}
-
-		network := &Connection{
-			Type:         connectionType,
-			Name:         description, // we want a relatable name, alias isn't that
-			TransmitRate: networkInterface.TransmitLinkSpeed,
-			ReceiveRate:  networkInterface.ReceiveLinkSpeed,
-			SSID:         ssid,
-		}
-
-		networks = append(networks, network)
-	}
-	return networks
-}
-
-type MIN_IF_TABLE2 struct { //nolint: revive
-	NumEntries uint64
-	Table      [256]MIB_IF_ROW2
-}
+var (
+	advapi     = syscall.NewLazyDLL("advapi32.dll")
+	procGetAce = advapi.NewProc("GetAce")
+)
 
 const (
-	IF_MAX_STRING_SIZE         uint64 = 256 //nolint: revive
-	IF_MAX_PHYS_ADDRESS_LENGTH uint64 = 32  //nolint: revive
+	ACCESS_DENIED_ACE_TYPE = 1 //nolint: revive
 )
 
-type MIB_IF_ROW2 struct { //nolint: revive
-	InterfaceLuid            uint64
-	InterfaceIndex           uint32
-	InterfaceGUID            windows.GUID
-	Alias                    [IF_MAX_STRING_SIZE + 1]uint16
-	Description              [IF_MAX_STRING_SIZE + 1]uint16
-	PhysicalAddressLength    uint32
-	PhysicalAddress          [IF_MAX_PHYS_ADDRESS_LENGTH]uint8
-	PermanentPhysicalAddress [IF_MAX_PHYS_ADDRESS_LENGTH]uint8
+type AccessAllowedAce struct {
+	AceType    uint8
+	AceFlags   uint8
+	AceSize    uint16
+	AccessMask uint32
+	SidStart   uint32
+}
 
-	Mtu                uint32
-	Type               uint32
-	TunnelType         uint32
-	MediaType          uint32
-	PhysicalMediumType uint32
-	AccessType         uint32
-	DirectionType      uint32
+func getCurrentUser() (sid *windows.SID, err error) {
+	token := windows.GetCurrentProcessToken()
+	defer token.Close()
 
-	InterfaceAndOperStatusFlags struct {
-		HardwareInterface bool
-		FilterInterface   bool
-		ConnectorPresent  bool
-		NotAuthenticated  bool
-		NotMediaConnected bool
-		Paused            bool
-		LowPower          bool
-		EndPointInterface bool
+	tokenuser, err := token.GetTokenUser()
+	sid = tokenuser.User.Sid
+	return
+}
+
+func isWriteable(folder string) bool {
+	cu, err := getCurrentUser()
+	if err != nil {
+		// unable to get current user
+		return false
 	}
 
-	OperStatus        uint32
-	AdminStatus       uint32
-	MediaConnectState uint32
-	NetworkGUID       windows.GUID
-	ConnectionType    uint32
-
-	TransmitLinkSpeed uint64
-	ReceiveLinkSpeed  uint64
-
-	InOctets           uint64
-	InUcastPkts        uint64
-	InNUcastPkts       uint64
-	InDiscards         uint64
-	InErrors           uint64
-	InUnknownProtos    uint64
-	InUcastOctets      uint64
-	InMulticastOctets  uint64
-	InBroadcastOctets  uint64
-	OutOctets          uint64
-	OutUcastPkts       uint64
-	OutNUcastPkts      uint64
-	OutDiscards        uint64
-	OutErrors          uint64
-	OutUcastOctets     uint64
-	OutMulticastOctets uint64
-	OutBroadcastOctets uint64
-	OutQLen            uint64
-}
-
-var (
-	wlanapi             = syscall.NewLazyDLL("wlanapi.dll")
-	hWlanOpenHandle     = wlanapi.NewProc("WlanOpenHandle")
-	hWlanCloseHandle    = wlanapi.NewProc("WlanCloseHandle")
-	hWlanQueryInterface = wlanapi.NewProc("WlanQueryInterface")
-)
-
-func (env *ShellEnvironment) getWiFiSSID(guid windows.GUID) string {
-	// Query wifi connection state
-	var pdwNegotiatedVersion uint32
-	var phClientHandle uint32
-	e, _, err := hWlanOpenHandle.Call(uintptr(uint32(2)), uintptr(unsafe.Pointer(nil)), uintptr(unsafe.Pointer(&pdwNegotiatedVersion)), uintptr(unsafe.Pointer(&phClientHandle)))
-	if e != 0 {
-		env.Log(Error, "getAllWifiSSID", err.Error())
-		return ""
+	si, err := windows.GetNamedSecurityInfo(folder, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return false
 	}
 
-	// defer closing handle
-	defer func() {
-		_, _, _ = hWlanCloseHandle.Call(uintptr(phClientHandle), uintptr(unsafe.Pointer(nil)))
-	}()
-
-	var dataSize uint16
-	var wlanAttr *WLAN_CONNECTION_ATTRIBUTES
-
-	e, _, _ = hWlanQueryInterface.Call(uintptr(phClientHandle),
-		uintptr(unsafe.Pointer(&guid)),
-		uintptr(7), // wlan_intf_opcode_current_connection
-		uintptr(unsafe.Pointer(nil)),
-		uintptr(unsafe.Pointer(&dataSize)),
-		uintptr(unsafe.Pointer(&wlanAttr)),
-		uintptr(unsafe.Pointer(nil)))
-	if e != 0 {
-		env.Log(Error, "parseWlanInterface", "wlan_intf_opcode_current_connection error")
-		return ""
+	dacl, _, err := si.DACL()
+	if err != nil || dacl == nil {
+		// no dacl implies full access
+		return true
 	}
 
-	ssid := wlanAttr.wlanAssociationAttributes.dot11Ssid
-	if ssid.uSSIDLength <= 0 {
-		return ""
+	rs := reflect.ValueOf(dacl).Elem()
+	aceCount := rs.Field(3).Uint()
+
+	for i := uint64(0); i < aceCount; i++ {
+		ace := &AccessAllowedAce{}
+
+		ret, _, _ := procGetAce.Call(uintptr(unsafe.Pointer(dacl)), uintptr(i), uintptr(unsafe.Pointer(&ace)))
+		if ret == 0 {
+			return false
+		}
+
+		if ace.AceType == ACCESS_DENIED_ACE_TYPE {
+			continue
+		}
+
+		aceSid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+
+		if !aceSid.Equals(cu) {
+			continue
+		}
+
+		allowMask := ^(windows.GENERIC_WRITE | windows.GENERIC_ALL)
+		if ace.AccessMask&uint32(allowMask) != 0 {
+			return true
+		}
 	}
-	return string(ssid.ucSSID[0:ssid.uSSIDLength])
-}
-
-type WLAN_CONNECTION_ATTRIBUTES struct { //nolint: revive
-	isState                   uint32      //nolint: unused
-	wlanConnectionMode        uint32      //nolint: unused
-	strProfileName            [256]uint16 //nolint: unused
-	wlanAssociationAttributes WLAN_ASSOCIATION_ATTRIBUTES
-	wlanSecurityAttributes    WLAN_SECURITY_ATTRIBUTES //nolint: unused
-}
-
-type WLAN_ASSOCIATION_ATTRIBUTES struct { //nolint: revive
-	dot11Ssid         DOT11_SSID
-	dot11BssType      uint32   //nolint: unused
-	dot11Bssid        [6]uint8 //nolint: unused
-	dot11PhyType      uint32   //nolint: unused
-	uDot11PhyIndex    uint32   //nolint: unused
-	wlanSignalQuality uint32   //nolint: unused
-	ulRxRate          uint32   //nolint: unused
-	ulTxRate          uint32   //nolint: unused
-}
-
-type WLAN_SECURITY_ATTRIBUTES struct { //nolint: revive
-	bSecurityEnabled     uint32 //nolint: unused
-	bOneXEnabled         uint32 //nolint: unused
-	dot11AuthAlgorithm   uint32 //nolint: unused
-	dot11CipherAlgorithm uint32 //nolint: unused
-}
-
-type DOT11_SSID struct { //nolint: revive
-	uSSIDLength uint32
-	ucSSID      [32]uint8
+	return false
 }

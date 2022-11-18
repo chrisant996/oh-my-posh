@@ -2,8 +2,8 @@ package cli
 
 import (
 	"fmt"
-	"oh-my-posh/environment"
 	"oh-my-posh/font"
+	"oh-my-posh/platform"
 
 	"github.com/spf13/cobra"
 )
@@ -33,9 +33,10 @@ This command is used to install fonts and configure the font in your terminal.
 				if len(args) > 1 {
 					fontName = args[1]
 				}
-				env := &environment.ShellEnvironment{}
+				env := &platform.Shell{}
 				env.Init()
-				needsAdmin := env.GOOS() == environment.WINDOWS && !env.Root()
+				defer env.Close()
+				needsAdmin := env.GOOS() == platform.WINDOWS && !env.Root()
 				font.Run(fontName, needsAdmin)
 				return
 			case "configure":
@@ -48,5 +49,5 @@ This command is used to install fonts and configure the font in your terminal.
 )
 
 func init() { //nolint:gochecknoinits
-	rootCmd.AddCommand(fontCmd)
+	RootCmd.AddCommand(fontCmd)
 }

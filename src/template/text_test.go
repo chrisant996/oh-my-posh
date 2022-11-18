@@ -1,8 +1,8 @@
 package template
 
 import (
-	"oh-my-posh/environment"
 	"oh-my-posh/mock"
+	"oh-my-posh/platform"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,6 +20,11 @@ func TestRenderTemplate(t *testing.T) {
 		ShouldError bool
 		Context     interface{}
 	}{
+		{
+			Case:     "color override with dots",
+			Expected: "😺💬<#FF8000> Meow! What should I do next? ...</>",
+			Template: "😺💬<#FF8000> Meow! What should I do next? ...</>",
+		},
 		{
 			Case:     "tillig's regex",
 			Expected: " ⎈ hello :: world ",
@@ -144,7 +149,7 @@ func TestRenderTemplate(t *testing.T) {
 	}
 
 	env := &mock.MockedEnvironment{}
-	env.On("TemplateCache").Return(&environment.TemplateCache{
+	env.On("TemplateCache").Return(&platform.TemplateCache{
 		Env: make(map[string]string),
 	})
 	env.On("Log", mock2.Anything, mock2.Anything, mock2.Anything)
@@ -201,7 +206,7 @@ func TestRenderTemplateEnvVar(t *testing.T) {
 	}
 	for _, tc := range cases {
 		env := &mock.MockedEnvironment{}
-		env.On("TemplateCache").Return(&environment.TemplateCache{
+		env.On("TemplateCache").Return(&platform.TemplateCache{
 			Env: tc.Env,
 		})
 		env.On("Log", mock2.Anything, mock2.Anything, mock2.Anything)
@@ -225,6 +230,16 @@ func TestCleanTemplate(t *testing.T) {
 		Expected string
 		Template string
 	}{
+		{
+			Case:     "Literal dots",
+			Expected: " ... ",
+			Template: " ... ",
+		},
+		{
+			Case:     "Literal dot",
+			Expected: "hello . what's up",
+			Template: "hello . what's up",
+		},
 		{
 			Case:     "Variable",
 			Expected: "{{range $cpu := .Data.CPU}}{{round $cpu.Mhz 2 }} {{end}}",

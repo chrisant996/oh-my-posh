@@ -3,7 +3,8 @@ package template
 import (
 	"bytes"
 	"errors"
-	"oh-my-posh/environment"
+	"oh-my-posh/platform"
+	"oh-my-posh/regex"
 	"strings"
 	"text/template"
 )
@@ -17,14 +18,14 @@ const (
 type Text struct {
 	Template        string
 	Context         interface{}
-	Env             environment.Environment
+	Env             platform.Environment
 	TemplatesResult string
 }
 
 type Data interface{}
 
 type Context struct {
-	*environment.TemplateCache
+	*platform.TemplateCache
 
 	// Simple container to hold ANY object
 	Data
@@ -41,10 +42,13 @@ func (c *Context) init(t *Text) {
 }
 
 func (t *Text) Render() (string, error) {
+	if !strings.Contains(t.Template, "{{") || !strings.Contains(t.Template, "}}") {
+		return t.Template, nil
+	}
 	t.cleanTemplate()
 	tmpl, err := template.New(t.Template).Funcs(funcMap()).Parse(t.Template)
 	if err != nil {
-		t.Env.Log(environment.Error, "Render", err.Error())
+		t.Env.Log(platform.Error, "Render", err.Error())
 		return "", errors.New(InvalidTemplate)
 	}
 	context := &Context{}
@@ -53,7 +57,7 @@ func (t *Text) Render() (string, error) {
 	defer buffer.Reset()
 	err = tmpl.Execute(buffer, context)
 	if err != nil {
-		t.Env.Log(environment.Error, "Render", err.Error())
+		t.Env.Log(platform.Error, "Render", err.Error())
 		return "", errors.New(IncorrectTemplate)
 	}
 	text := buffer.String()
@@ -85,9 +89,13 @@ func (t *Text) cleanTemplate() {
 		variable = strings.TrimPrefix(variable, ".")
 		splitted := strings.Split(variable, ".")
 		if len(splitted) == 0 {
-			return false
+			return true
 		}
 		variable = splitted[0]
+		// check if alphanumeric
+		if !regex.MatchString(`^[a-zA-Z0-9]+$`, variable) {
+			return true
+		}
 		for _, b := range knownVariables {
 			if variable == b {
 				return true
@@ -138,5 +146,6 @@ func (t *Text) cleanTemplate() {
 		}
 	}
 
-	t.Template = result
+	// return the result and remaining unresolved property
+	t.Template = result + property
 }

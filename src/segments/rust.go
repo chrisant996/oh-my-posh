@@ -1,7 +1,7 @@
 package segments
 
 import (
-	"oh-my-posh/environment"
+	"oh-my-posh/platform"
 	"oh-my-posh/properties"
 )
 
@@ -13,7 +13,7 @@ func (r *Rust) Template() string {
 	return languageTemplate
 }
 
-func (r *Rust) Init(props properties.Properties, env environment.Environment) {
+func (r *Rust) Init(props properties.Properties, env platform.Environment) {
 	r.language = language{
 		env:        env,
 		props:      props,
@@ -22,7 +22,7 @@ func (r *Rust) Init(props properties.Properties, env environment.Environment) {
 			{
 				executable: "rustc",
 				args:       []string{"--version"},
-				regex:      `rustc (?P<version>((?P<major>[0-9]+).(?P<minor>[0-9]+).(?P<patch>[0-9]+))(-(?P<prerelease>[a-z]+))?) (\((?P<buildmetadata>[0-9a-f]+ [0-9]+-[0-9]+-[0-9]+)\))`,
+				regex:      `rustc (?P<version>((?P<major>[0-9]+).(?P<minor>[0-9]+).(?P<patch>[0-9]+))(-(?P<prerelease>[a-z]+))?)(( \((?P<buildmetadata>[0-9a-f]+ [0-9]+-[0-9]+-[0-9]+)\))?)`,
 			},
 		},
 	}

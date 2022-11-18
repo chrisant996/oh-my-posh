@@ -5,7 +5,7 @@ import (
 	"oh-my-posh/color"
 	"oh-my-posh/console"
 	"oh-my-posh/engine"
-	"oh-my-posh/environment"
+	"oh-my-posh/platform"
 	"oh-my-posh/shell"
 
 	"github.com/spf13/cobra"
@@ -46,9 +46,9 @@ var printCmd = &cobra.Command{
 			_ = cmd.Help()
 			return
 		}
-		env := &environment.ShellEnvironment{
+		env := &platform.Shell{
 			Version: cliVersion,
-			CmdFlags: &environment.Flags{
+			CmdFlags: &platform.Flags{
 				Config:        config,
 				PWD:           pwd,
 				PSWD:          pswd,
@@ -128,5 +128,5 @@ func init() { //nolint:gochecknoinits
 	printCmd.Flags().StringVar(&command, "command", "", "tooltip command")
 	printCmd.Flags().BoolVarP(&plain, "plain", "p", false, "plain text output (no ANSI)")
 	printCmd.Flags().BoolVar(&eval, "eval", false, "output the prompt for eval")
-	rootCmd.AddCommand(printCmd)
+	RootCmd.AddCommand(printCmd)
 }
